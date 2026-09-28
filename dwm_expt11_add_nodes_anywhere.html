@@ -1,0 +1,720 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Dynamic PageRank Graph</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 18px;
+            margin: 8px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #333;
+            color: white;
+        }
+
+        button:hover {
+            background: #555;
+        }
+
+        #graph {
+            width: 800px;
+            height: 500px;
+            margin: 20px auto;
+            background: white;
+            border: 2px solid #333;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .node {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #3498db;
+            color: white;
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+            z-index: 2;
+            box-sizing: border-box;
+        }
+
+        .node.selected {
+            background: #e74c3c;
+        }
+
+        svg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            left: 0;
+            top: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        line {
+            stroke: #333;
+            stroke-width: 2.5;
+        }
+
+        #info {
+            font-size: 16px;
+            margin: 15px;
+        }
+
+        #graph.placement-mode {
+            cursor: crosshair;
+        }
+
+        #placementStatus {
+            display: inline-block;
+            margin-left: 8px;
+            font-weight: bold;
+            color: #e67e22;
+        }
+
+        /* CENTER PAGE RANK RESULTS */
+        #results {
+            margin: 20px auto;
+            text-align: center;
+            width: 100%;
+        }
+
+        table {
+            border-collapse: collapse;
+            margin: 0 auto;
+            background: white;
+        }
+
+        th {
+            background: #333;
+            color: white;
+        }
+
+        td,
+        th {
+            padding: 10px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Dynamic PageRank Graph</h1>
+
+    <div id="info">
+        Click <b>Add Node</b>, then click anywhere inside the graph to place the node.<br>
+        Click one node and then another node to create a directed link.
+        <span id="placementStatus"></span>
+    </div>
+
+    <button onclick="enableNodePlacement()">Add Node</button>
+    <button onclick="clearGraph()">Clear Graph</button>
+    <button onclick="calculatePageRank()">Calculate PageRank</button>
+
+    <div id="graph">
+        <svg id="lines"></svg>
+    </div>
+
+    <h2>PageRank Results</h2>
+
+    <div id="results"></div>
+
+
+    <script>
+
+        let nodes = [];
+        let links = [];
+        let selectedNode = null;
+        let nodeCount = 0;
+        let placementMode = false;
+
+        const graph = document.getElementById("graph");
+        const svg = document.getElementById("lines");
+        const placementStatus = document.getElementById("placementStatus");
+
+
+        // -------------------------------
+        // ADD NODE ANYWHERE
+        // -------------------------------
+
+        function enableNodePlacement() {
+            placementMode = true;
+            graph.classList.add("placement-mode");
+            placementStatus.innerText = "Placement mode: click anywhere in the graph";
+        }
+
+        function addNode(x, y) {
+
+            nodeCount++;
+
+            let node = document.createElement("div");
+
+            node.className = "node";
+
+            // Supports A-Z, then Node27, Node28, etc.
+            node.innerText =
+                nodeCount <= 26
+                    ? String.fromCharCode(64 + nodeCount)
+                    : "N" + nodeCount;
+
+            // Keep the complete node inside the graph.
+            const nodeSize = 50;
+            const maxX = graph.clientWidth - nodeSize;
+            const maxY = graph.clientHeight - nodeSize;
+
+            x = Math.max(0, Math.min(x - nodeSize / 2, maxX));
+            y = Math.max(0, Math.min(y - nodeSize / 2, maxY));
+
+            node.style.left = x + "px";
+            node.style.top = y + "px";
+
+            node.dataset.id = nodeCount;
+
+            node.onclick = function (event) {
+                // Do not let a node click trigger graph placement.
+                event.stopPropagation();
+
+                if (selectedNode == null) {
+
+                    selectedNode = node;
+
+                    node.classList.add("selected");
+
+                } else {
+
+                    if (selectedNode !== node) {
+
+                        createLink(
+                            selectedNode.dataset.id,
+                            node.dataset.id
+                        );
+                    }
+
+                    selectedNode.classList.remove("selected");
+                    selectedNode = null;
+                }
+            };
+
+            graph.appendChild(node);
+
+            nodes.push({
+                id: nodeCount,
+                element: node
+            });
+
+            drawLinks();
+        }
+
+        // Click anywhere on the graph to place a node.
+        graph.addEventListener("click", function (event) {
+
+            if (!placementMode) {
+                return;
+            }
+
+            // Only place when the graph background itself is clicked.
+            if (event.target !== graph && event.target !== svg) {
+                return;
+            }
+
+            const rect = graph.getBoundingClientRect();
+
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            addNode(x, y);
+
+            placementMode = false;
+            graph.classList.remove("placement-mode");
+            placementStatus.innerText = "";
+        });
+
+
+        // -------------------------------
+        // CREATE DIRECTED LINK
+        // -------------------------------
+
+        function createLink(from, to) {
+
+            // Prevent duplicate links
+            let exists = links.some(
+                link =>
+                    link.from == from &&
+                    link.to == to
+            );
+
+
+            if (!exists) {
+
+                links.push({
+
+                    from: Number(from),
+
+                    to: Number(to)
+
+                });
+
+
+                drawLinks();
+            }
+        }
+
+
+        // -------------------------------
+        // DRAW DIRECTED LINKS
+        // -------------------------------
+
+        function drawLinks() {
+
+            // Clear previous lines
+            svg.innerHTML = "";
+
+
+            // -------------------------------
+            // ARROW DEFINITION
+            // -------------------------------
+
+            let defs =
+                document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "defs"
+                );
+
+
+            let marker =
+                document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "marker"
+                );
+
+
+            marker.setAttribute(
+                "id",
+                "arrow"
+            );
+
+            marker.setAttribute(
+                "markerWidth",
+                "10"
+            );
+
+            marker.setAttribute(
+                "markerHeight",
+                "10"
+            );
+
+            marker.setAttribute(
+                "refX",
+                "9"
+            );
+
+            marker.setAttribute(
+                "refY",
+                "3"
+            );
+
+            marker.setAttribute(
+                "orient",
+                "auto"
+            );
+
+            marker.setAttribute(
+                "markerUnits",
+                "strokeWidth"
+            );
+
+
+            let path =
+                document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "path"
+                );
+
+
+            path.setAttribute(
+                "d",
+                "M0,0 L0,6 L9,3 z"
+            );
+
+
+            path.setAttribute(
+                "fill",
+                "#333"
+            );
+
+
+            marker.appendChild(path);
+
+            defs.appendChild(marker);
+
+            svg.appendChild(defs);
+
+
+            // -------------------------------
+            // DRAW EACH LINK
+            // -------------------------------
+
+            links.forEach(link => {
+
+                let fromNode =
+                    nodes.find(
+                        n => n.id == link.from
+                    );
+
+
+                let toNode =
+                    nodes.find(
+                        n => n.id == link.to
+                    );
+
+
+                if (!fromNode || !toNode) {
+                    return;
+                }
+
+
+                // Center coordinates
+
+                let x1 =
+                    fromNode.element.offsetLeft +
+                    25;
+
+                let y1 =
+                    fromNode.element.offsetTop +
+                    25;
+
+
+                let x2 =
+                    toNode.element.offsetLeft +
+                    25;
+
+                let y2 =
+                    toNode.element.offsetTop +
+                    25;
+
+
+                // -------------------------------
+                // CALCULATE DIRECTION
+                // -------------------------------
+
+                let dx =
+                    x2 - x1;
+
+                let dy =
+                    y2 - y1;
+
+
+                let distance =
+                    Math.sqrt(
+                        dx * dx +
+                        dy * dy
+                    );
+
+
+                if (distance === 0) {
+                    return;
+                }
+
+
+                let unitX =
+                    dx / distance;
+
+                let unitY =
+                    dy / distance;
+
+
+                // -------------------------------
+                // KEEP LINE OUTSIDE NODES
+                // -------------------------------
+
+                let radius = 25;
+
+
+                let startX =
+                    x1 +
+                    unitX * radius;
+
+
+                let startY =
+                    y1 +
+                    unitY * radius;
+
+
+                let endX =
+                    x2 -
+                    unitX * radius;
+
+
+                let endY =
+                    y2 -
+                    unitY * radius;
+
+
+                // -------------------------------
+                // CREATE LINE
+                // -------------------------------
+
+                let line =
+                    document.createElementNS(
+                        "http://www.w3.org/2000/svg",
+                        "line"
+                    );
+
+
+                line.setAttribute(
+                    "x1",
+                    startX
+                );
+
+                line.setAttribute(
+                    "y1",
+                    startY
+                );
+
+                line.setAttribute(
+                    "x2",
+                    endX
+                );
+
+                line.setAttribute(
+                    "y2",
+                    endY
+                );
+
+
+                line.setAttribute(
+                    "stroke",
+                    "#333"
+                );
+
+                line.setAttribute(
+                    "stroke-width",
+                    "2.5"
+                );
+
+
+                // Visible arrowhead
+                line.setAttribute(
+                    "marker-end",
+                    "url(#arrow)"
+                );
+
+
+                svg.appendChild(line);
+
+            });
+        }
+
+
+        // -------------------------------
+        // CALCULATE PAGERANK
+        // -------------------------------
+
+        function calculatePageRank() {
+
+            let N =
+                nodes.length;
+
+
+            if (N == 0) {
+
+                alert(
+                    "Please add some nodes first."
+                );
+
+                return;
+            }
+
+
+            // Initial PageRank = 1/N
+
+            let rank = {};
+
+
+            nodes.forEach(node => {
+
+                rank[node.id] =
+                    1 / N;
+
+            });
+
+
+            let damping = 0.85;
+
+
+            // -------------------------------
+            // ITERATIONS
+            // -------------------------------
+
+            for (
+                let iteration = 0;
+                iteration < 100;
+                iteration++
+            ) {
+
+                let newRank = {};
+
+
+                nodes.forEach(node => {
+
+                    newRank[node.id] =
+                        (1 - damping) / N;
+
+                });
+
+
+                nodes.forEach(node => {
+
+                    let outgoing =
+                        links.filter(
+                            link =>
+                                link.from ==
+                                node.id
+                        );
+
+
+                    if (outgoing.length > 0) {
+
+                        outgoing.forEach(
+                            link => {
+
+                                newRank[link.to] +=
+
+                                    damping *
+
+                                    rank[node.id] /
+
+                                    outgoing.length;
+
+                            }
+                        );
+
+                    }
+
+                });
+
+
+                rank =
+                    newRank;
+            }
+
+
+            displayResults(rank);
+        }
+
+
+        // -------------------------------
+        // DISPLAY RESULTS
+        // -------------------------------
+
+        function displayResults(rank) {
+
+            let resultHTML =
+                "<table cellpadding='10'>";
+
+
+            resultHTML +=
+
+                "<tr>" +
+
+                "<th>Node</th>" +
+
+                "<th>PageRank</th>" +
+
+                "</tr>";
+
+
+            nodes.forEach(node => {
+
+                resultHTML +=
+
+                    "<tr>" +
+
+                    "<td>" +
+
+                    node.element.innerText +
+
+                    "</td>" +
+
+                    "<td>" +
+
+                    rank[node.id].toFixed(4) +
+
+                    "</td>" +
+
+                    "</tr>";
+            });
+
+
+            resultHTML +=
+                "</table>";
+
+
+            document.getElementById(
+                "results"
+            ).innerHTML =
+                resultHTML;
+        }
+
+
+        // -------------------------------
+        // CLEAR GRAPH
+        // -------------------------------
+
+        function clearGraph() {
+
+            nodes = [];
+
+            links = [];
+
+            nodeCount = 0;
+
+            selectedNode = null;
+            placementMode = false;
+
+            graph.classList.remove("placement-mode");
+            placementStatus.innerText = "";
+
+
+            document
+                .querySelectorAll(".node")
+                .forEach(
+                    node => node.remove()
+                );
+
+
+            svg.innerHTML = "";
+
+
+            document.getElementById(
+                "results"
+            ).innerHTML = "";
+        }
+
+    </script>
+
+</body>
+
+</html>
+
